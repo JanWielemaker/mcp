@@ -36,6 +36,15 @@ Transports:
     `resources/templates/list`)
   - Prompts (`prompts/list`, `prompts/get`)
 
+Progress notifications (`notifications/progress` and the
+`params._meta.progressToken` intake on requests) are not implemented.
+Tool calls reply with a single buffered JSON-RPC response; there is no
+intra-call streaming.  On the HTTP transport the `mcp_notify/2` path
+reaches only clients holding a `GET /sse` stream — the streamable-HTTP
+`POST /mcp` reply is sent as `application/json`, not as an SSE event
+stream, so a tool cannot interleave progress events into its own
+response.
+
 ## Writing a server
 
 A minimal _hello_ server:
