@@ -114,4 +114,4 @@ WORKDIR /srv/mcp
 #  running as the unprivileged `mcp` account.
 
 ENTRYPOINT ["swipl", "examples/swipl_help_public.pl"]
-CMD        ["--port=3410", "--ip=0.0.0.0"]
+CMD        ["--no-fork", "--port=3410", "--ip=0.0.0.0"]
