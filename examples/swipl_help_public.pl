@@ -38,6 +38,7 @@
 :- use_module(library(mcp/servers/source)).
 :- use_module(library(mcp/servers/git)).
 :- use_module(library(http/http_unix_daemon)).
+:- use_module(library(http/http_log)).
 
 :- mcp_server_info(#{name:"swipl-help", version:"0.1.0"}).
 
