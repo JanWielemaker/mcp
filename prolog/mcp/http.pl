@@ -32,7 +32,7 @@
 
 :- module(mcp_http, []).
 :- use_module(library(mcp/server), [mcp_dispatch/3]).
-:- use_module(library(http/thread_httpd), [http_server/2]).
+:- use_module(library(http/thread_httpd), [http_server/2, http_spawn/2]).
 :- use_module(library(http/http_dispatch), [http_handler/3, http_404/2]).
 :- use_module(library(http/http_json),
               [http_read_json_dict/2, reply_json_dict/2]).
@@ -98,16 +98,33 @@ http:location(pldoc_pkg, pldoc(package),    [priority(-10)]).
 :- http_handler(root(pldoc), http_404([]),
                 [prefix, hide_children(true), priority(10)]).
 
-:- http_handler(mcp(messages), handle_post, [method(post), id(mcp_http_post)]).
+:- http_handler(mcp(messages), handle_post, [ method(post),
+                                              id(mcp_http_post)
+                                            ]).
 :- http_handler(mcp(sse),      handle_sse,  [ method(get),
                                               id(mcp_http_sse),
                                               spawn([]),
                                               time_limit(infinite)
                                             ]).
+:- http_handler(root(mcp),     handle_mcp,  [ methods([get,post]),
+                                              id(mcp_http_streamable_sse)
+                                            ]).
+
+%!  handle_mcp(+Request)
+%
+%   Handle POST and SSE requests on the same location.
+
+handle_mcp(Request) :-
+    option(method(post), Request),
+    !,
+    handle_post(Request).
+handle_mcp(Request) :-
+    option(method(get), Request),
+    http_spawn(handle_sse(Request), []).
 
 
                 /*******************************
-                *      POST /messages           *
+                *      POST /messages          *
                 *******************************/
 
 handle_post(Request) :-
