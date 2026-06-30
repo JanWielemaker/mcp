@@ -1,3 +1,5 @@
 *~
 status.db
 buildenv.sh
+epoch
+*.log*

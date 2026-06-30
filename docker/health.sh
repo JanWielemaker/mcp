@@ -1,29 +1,43 @@
 #!/bin/bash
 #  HEALTHCHECK script for the MCP help server container.
-#
-#  We don't ship a /health endpoint -- the only thing the server
-#  speaks is JSON-RPC over POST /mcp/messages and the SSE GET.  An
-#  `initialize` request is the cheapest valid round-trip: any
-#  2xx + parseable JSON reply means the dispatcher is up.
 
-exec &> /tmp/health.log
+exec &> health.log
 
-POST_URL="http://localhost:3410/mcp/messages"
-
-read -r -d '' INITIALIZE <<'JSON'
-{ "jsonrpc": "2.0",
-  "id": 1,
-  "method": "initialize",
-  "params": {
-    "protocolVersion": "2024-11-05",
-    "capabilities": {},
-    "clientInfo": { "name": "healthcheck", "version": "0" }
-  }
+check()
+{ auth=
+  if [ -r health.auth ]; then
+     auth="$(cat health.auth)"
+  fi
+  curl --fail -s --retry 3 --max-time 5 \
+       http://localhost:3410/mcp/health
+  return $?
 }
-JSON
 
-curl --fail -s --retry 2 --max-time 5 \
-     -H 'Content-Type: application/json' \
-     --data-binary "$INITIALIZE" \
-     "$POST_URL" \
-     | grep -q '"jsonrpc":"2.0"'
+stop()
+{ pid=1
+  echo "Health check failed.  Killing swish with SIGTERM"
+  kill -s TERM 1 $pid
+  timeout 10 tail --pid=$pid -f /dev/null
+  if [ $? == 124 ]; then
+      echo "Gracefull termination failed.  Trying QUIT"
+      kill -s QUIT $pid
+      timeout 10 tail --pid=$pid -f /dev/null
+      if [ $? == 124 ]; then
+	   echo "QUIT failed.  Trying KILL"
+	   kill -s KILL $pid
+      fi
+  fi
+  echo "Done"
+}
+
+starting()
+{ if [ -f epoch ]; then
+      epoch=$(cat epoch)
+      running=$(($(date "+%s") - $epoch))
+      [ $running -lt 60 ] || return 1
+  fi
+  echo "Starting, so not killing"
+  return 0
+}
+
+check || starting || stop

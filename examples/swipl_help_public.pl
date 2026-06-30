@@ -31,6 +31,28 @@
 */
 
 :- module(swipl_help_public, []).
+:- autoload(library(http/http_server), [http_handler/3]).
+:- autoload(library(http/http_server_health), [server_health/1]).
+:- autoload(library(http/http_unix_daemon), [http_daemon/0]).
+:- autoload(library(mcp/server), [mcp_server_info/1]).
+:- use_module(library(settings), [set_setting_default/2]).
+
+%!  set_epoch
+%
+%   Write our start time in the file `epoch`, such that `health.sh` can
+%   give us some grace time for startup.
+
+set_epoch :-
+    get_time(Now),
+    Seconds is round(Now),
+    setup_call_cleanup(
+        open(epoch, write, Out),
+        format(Out, "~w~n", [Seconds]),
+        close(Out)).
+
+:- initialization(set_epoch, now).
+:- at_halt(catch(delete_file(epoch), error(_,_), true)).
+
 :- use_module(library(mcp/server)).
 :- use_module(library(mcp/http)).
 :- use_module(library(mcp/servers/prolog_help)).
@@ -38,26 +60,40 @@
 :- use_module(library(mcp/servers/source)).
 :- use_module(library(mcp/servers/git)).
 :- use_module(library(http/http_unix_daemon)).
-:- use_module(library(http/http_log)).
+:- use_module(library(http/http_server)).
+:- use_module(library(http/http_log), [http_schedule_logrotate/2]).
+:- use_module(library(http/http_server_health)).
 
 :- mcp_server_info(#{name:"swipl-help", version:"0.1.0"}).
 
 /** <module> Public MCP help server for www.swi-prolog.org
 
-Hosts the *read-only* MCP introspection suite -- prolog_help (manual,
-xref, pldoc), swipl_kernel (C-source grep), source (file listing,
-reading, grep over configured roots) and git (log/blame/show/diff/
-grep on roots that are git work-trees).  Deliberately omits
-target_toplevel (spawns child swipl processes) and dev_reload (calls
-make/0 in the server process) -- both are appropriate only in a
-trusted developer loop, never in a public-facing deployment.
+Hosts the *read-only* MCP introspection   suite  -- prolog_help (manual,
+xref,  pldoc),  swipl_kernel  (C-source  grep),  source  (file  listing,
+reading, grep over configured roots)  and git (log/blame/show/diff/ grep
+on roots that are git   work-trees).  Deliberately omits target_toplevel
+(spawns child swipl processes)  and  dev_reload   (calls  make/0  in the
+server process) -- both are  appropriate   only  in  a trusted developer
+loop, never in a public-facing deployment.
 
 Run via library(http/http_unix_daemon):
 
     swipl examples/swipl_help_public.pl \
-        --port=8080 --ip=0.0.0.0
+        --no-fork --port=8080 --ip=0.0.0.0
 
 See the docker/ subdirectory for the production-deployment recipe.
 */
+
+% Provide /mcp/health to drive `health.sh` and allow inspecting the
+% server status.
+:- http_handler(mcp(health), server_health, [id(server_health), priority(10)]).
+
+% Setup logging
+:- set_setting_default(http:log_post_data, 1000).
+:- initialization(http_schedule_logrotate(weekly(sun, 04:45),
+                                          [ background(true)
+                                          ])).
+
+% finally, start the server
 
 :- initialization(http_daemon, main).
