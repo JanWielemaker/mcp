@@ -33,9 +33,16 @@
 :- module(mcp_stdio,
           [ mcp_stdio_run/0
           ]).
-:- use_module(library(mcp/server), [mcp_dispatch/3, mcp_set_rpc_stream/1]).
+:- use_module(library(mcp/server),
+              [ mcp_dispatch/3,
+                mcp_set_rpc_stream/1,
+                mcp_current_tool/4,
+                mcp_current_resource/4,
+                mcp_current_prompt/4
+              ]).
 :- use_module(library(json), [json_read_dict/3]).
 :- use_module(library(debug), [debug/3]).
+:- use_module(library(aggregate), [aggregate_all/3]).
 
 /** <module> stdio transport for MCP servers
 
@@ -90,7 +97,10 @@ mcp_stdio_run :-
 redirect_user_io_to_null :-
     open_null_stream(NullOut),
     set_stream(NullOut, alias(user_output)),
-    (   catch(( format(user_error, "Connected\n", []),
+    services(Tools, Resources, Prompts),
+    (   catch(( format(user_error,
+                       "Connected (~d tools, ~d resources, ~d prompts)\n",
+                       [Tools, Resources, Prompts]),
                 flush_output(user_error)
               ),
               error(_,_),
@@ -99,6 +109,12 @@ redirect_user_io_to_null :-
     ;   open_null_stream(NullErr),
         set_stream(NullErr, alias(user_error))
     ).
+
+services(Tools, Resources, Prompts) :-
+    aggregate_all(count, mcp_current_tool(_,_,_,_), Tools),
+    aggregate_all(count, mcp_current_resource(_,_,_,_), Resources),
+    aggregate_all(count, mcp_current_prompt(_,_,_,_), Prompts).
+
 
 run_loop(Stream) :-
     json_read_dict(Stream, Request,
