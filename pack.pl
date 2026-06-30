@@ -7,4 +7,4 @@ maintainer( 'Jan Wielemaker', 'jan@swi-prolog.org' ).
 packager( 'Jan Wielemaker', 'jan@swi-prolog.org' ).
 home( 'https://github.com/JanWielemaker/mcp.git' ).
 download( 'https://github.com/JanWielemaker/mcp.git' ).
-requires(prolog >= '10.1.10').
+requires(prolog >= '10.1.10-6').
