@@ -40,6 +40,7 @@
 :- use_module(library(option), [option/2, option/3]).
 :- use_module(library(uuid), [uuid/1]).
 :- use_module(library(json), [json_write_dict/3]).
+:- use_module(library(http/http_cors), [cors_enable/2]).
 
 /** <module> MCP HTTP+SSE transport
 
@@ -115,6 +116,12 @@ http:location(pldoc_pkg, pldoc(package),    [priority(-10)]).
 %   Handle POST and SSE requests on the same location.
 
 handle_mcp(Request) :-
+    option(method(options), Request), !,
+    cors_enable(Request,
+                [ methods([get,post])
+                ]),
+    format('~n').
+handle_mcp(Request) :-
     option(method(post), Request),
     !,
     handle_post(Request).
@@ -127,6 +134,12 @@ handle_mcp(Request) :-
                 *      POST /messages          *
                 *******************************/
 
+handle_post(Request) :-
+    option(method(options), Request), !,
+    cors_enable(Request,
+                [ methods([post])
+                ]),
+    format('~n').
 handle_post(Request) :-
     catch(http_read_json_dict(Request, JsonReq), Err,
           ( reply_bad_request(Err), fail )),
@@ -176,6 +189,12 @@ ensure_session_record(SessionId) :-
                 *        GET /sse              *
                 *******************************/
 
+handle_sse(Request) :-
+    option(method(options), Request), !,
+    cors_enable(Request,
+                [ methods([get])
+                ]),
+    format('~n').
 handle_sse(Request) :-
     (   memberchk(mcp_session_id(SessionId), Request),
         mcp_session(SessionId, Q)

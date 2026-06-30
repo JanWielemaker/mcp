@@ -86,6 +86,7 @@ See the docker/ subdirectory for the production-deployment recipe.
 
 % Provide /mcp/health to drive `health.sh` and allow inspecting the
 % server status.
+:- set_setting_default(http:cors, [*]).
 :- http_handler(mcp(health), server_health, [id(server_health), priority(10)]).
 
 % Setup logging
