@@ -152,13 +152,28 @@ handle_post(Request) :-
     with_output_to(string(RawReply),
                    mcp_dispatch(current_output, JsonReq,
                                 [mcp_session(SessionId)])),
-    %  Send the reply with the session header so the client knows
-    %  which id to use on the SSE GET.
+    reply_post(RawReply, SessionId).
+handle_post(_Request).
+    %  Already replied with an error in the catch above.
+
+%!  reply_post(+RawReply:string, +SessionId) is det.
+%
+%   Send the HTTP response for a POST that has already been dispatched.
+%   A JSON-RPC notification (or a batch of only notifications) produces
+%   an empty RawReply: mcp_dispatch/3 writes nothing.  The MCP
+%   Streamable HTTP transport spec requires the server to reply with
+%   `202 Accepted` and no body in that case.  Codex-cli rejects the
+%   old 200-with-empty-application/json-body response and tears down
+%   the transport.
+
+reply_post("", SessionId) :- !,
+    format('Status: 202 Accepted~n'),
+    format('Mcp-Session-Id: ~w~n', [SessionId]),
+    format('~n').
+reply_post(RawReply, SessionId) :-
     format('Mcp-Session-Id: ~w~n', [SessionId]),
     format('Content-Type: application/json; charset=UTF-8~n~n'),
     write(RawReply).
-handle_post(_Request).
-    %  Already replied with an error in the catch above.
 
 reply_bad_request(Err) :-
     message_to_string(Err, Msg),
