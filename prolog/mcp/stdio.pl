@@ -31,7 +31,8 @@
 */
 
 :- module(mcp_stdio,
-          [ mcp_stdio_run/0
+          [ mcp_stdio_run/0,
+            mcp_log/2                   % +Kind, +Term
           ]).
 :- use_module(library(mcp/server),
               [ mcp_dispatch/3,
@@ -51,6 +52,14 @@ responses to stdout. Before entering the loop the original stdout stream
 is captured, Prolog's `user_output`  is  bound   to  a  null  stream and
 `user_error` is bound to a null stream   if  writing an initial feedback
 message fails.
+
+## Logging
+
+If the environment variable `SWIPL_MCP_LOG` is set to a writable file
+path, every incoming JSON-RPC request and, for target-driving tools,
+the goal sent to the child plus the response returned, are appended to
+that file with a fractional-second timestamp. Log-write failures are
+swallowed so a full or missing filesystem cannot take the server down.
 
 Typical use in an application file:
 
@@ -78,12 +87,51 @@ mcp_stdio_run :-
     %  Stash for server-initiated notifications (mcp_notify/2).
     mcp_set_rpc_stream(RpcStream),
     redirect_user_io_to_null,
+    open_request_log,
     catch(run_loop(RpcStream),
           Error,
           (   print_message(error, Error),
               halt(1)
           )),
     halt(0).
+
+%!  open_request_log is det.
+%
+%   If the environment variable `SWIPL_MCP_LOG` is set, open the named
+%   file in append mode, timestamp the session start, and stash the
+%   handle for mcp_log/2. Otherwise leave logging disabled.
+
+open_request_log :-
+    (   getenv('SWIPL_MCP_LOG', Path),
+        Path \== ''
+    ->  catch(open(Path, append, Stream, [encoding(utf8), buffer(line)]),
+              _, fail),
+        assertz(mcp_log_stream(Stream)),
+        get_time(T),
+        format_time(string(TS), '%FT%T%z', T),
+        current_prolog_flag(pid, PID),
+        format(Stream, "~n=== session start ~w pid=~w ===~n", [TS, PID]),
+        flush_output(Stream)
+    ;   true
+    ).
+
+:- dynamic mcp_log_stream/1.
+
+%!  mcp_log(+Kind, +Term) is det.
+%
+%   Write a single log record if logging is enabled. Kind is a short
+%   atom (request, response, event); Term is the payload written with
+%   ~q so it round-trips through read.
+
+mcp_log(Kind, Term) :-
+    (   mcp_log_stream(Stream)
+    ->  get_time(T),
+        format_time(string(TS), '%T.%3f', T),
+        catch((   format(Stream, "~w ~w ~q.~n", [TS, Kind, Term]),
+                  flush_output(Stream)
+              ), _, true)
+    ;   true
+    ).
 
 %!  redirect_user_io_to_null is det.
 %
@@ -124,8 +172,11 @@ run_loop(Stream) :-
     (   Request == end_of_file
     ->  true
     ;   debug(mcp(stdio), 'received: ~p', [Request]),
+        mcp_log(request, Request),
         catch(mcp_dispatch(user:Stream, Request, []),
               Error,
-              print_message(error, Error)),
+              (   mcp_log(dispatch_error, Error),
+                  print_message(error, Error)
+              )),
         run_loop(Stream)
     ).

@@ -35,7 +35,6 @@
           ]).
 
 :- use_module(library(json), [atom_json_dict/3]).
-:- use_module(library(time), [call_with_time_limit/2]).
 
 /** <module> Demultiplexer for the magic-marker stream from mcp_target.pl
 
@@ -56,43 +55,62 @@ The last element is always one of `prompt`, `timeout` or `eof`.
 */
 
 %!  drain_until_prompt(+Stream, +TimeoutSec, -Events) is det.
+%
+%   Read the child's stdout until a prompt event is seen, EOF is
+%   reached, or the wall-clock deadline is hit. The deadline is
+%   enforced by wait_for_input/3 rather than call_with_time_limit/2 —
+%   the latter delivers SIGALRM to the process, and after that fires
+%   subsequent read_string/5 calls on the same stream in the same
+%   call chain return no data (silent drain failures observed when
+%   recovering from a runaway goal via SIGINT).
 
 drain_until_prompt(Stream, TimeoutSec, Events) :-
-    catch(call_with_time_limit(TimeoutSec,
-                               drain(Stream, [], EventsR)),
-          time_limit_exceeded,
-          EventsR = [timeout]),
+    get_time(T0),
+    Deadline is T0 + TimeoutSec,
+    drain(Stream, Deadline, [], EventsR),
     reverse(EventsR, Events).
 
-%  drain/3 alternates between two states:
+%  drain/4 alternates between two states:
 %
 %    - OUTSIDE an event: read plain text up to the next SOH (or EOF)
 %      with read_string/5 stopping on SOH (0x01).
 %    - INSIDE an event:  read the JSON body up to the next ETX (0x03)
 %      with read_event/2.
 %
-%  read_string/5 consumes the stop char, so   after each call we already
-%  know we are either at EOF (Sep ==  -1)   or  just past an SOH (Sep ==
-%  0x01) and should call read_event next.
+%  Before each outer read we wait_for_input/3 up to the remaining
+%  deadline. A timed-out wait terminates the drain with `timeout`.
 
-drain(Stream, Acc, Out) :-
-    read_string(Stream, "\u0001", "", Sep, Text),
-    pre_event_acc(Text, Acc, Acc1),
-    (   Sep == 0x01
-    ->  read_event(Stream, Event),
-        (   is_prompt(Event)
-        ->  Out = [event(Event), prompt|Acc1]
-        ;   drain(Stream, [event(Event)|Acc1], Out)
+drain(Stream, Deadline, Acc, Out) :-
+    (   ready_or_timeout(Stream, Deadline)
+    ->  read_string(Stream, "", "", Sep, Text),
+        pre_event_acc(Text, Acc, Acc1),
+        (   Sep == 0x01
+        ->  read_event(Stream, Event),
+            (   is_prompt(Event)
+            ->  Out = [event(Event), prompt|Acc1]
+            ;   drain(Stream, Deadline, [event(Event)|Acc1], Out)
+            )
+        ;   Out = [eof|Acc1]                 % Sep == -1, EOF
         )
-    ;   Out = [eof|Acc1]                 % Sep == -1, EOF
+    ;   Out = [timeout|Acc]
     ).
+
+%  Succeed when Stream is readable, fail when the wall-clock Deadline
+%  has been reached.
+
+ready_or_timeout(Stream, Deadline) :-
+    get_time(Now),
+    Remaining is Deadline - Now,
+    Remaining > 0,
+    wait_for_input([Stream], Ready, Remaining),
+    Ready == [Stream].
 
 pre_event_acc("", Acc, Acc) :- !.
 pre_event_acc(Text, Acc, [text(Text)|Acc]).
 
 %  Read the JSON body up to ETX, then JSON-decode the buffer.
 read_event(Stream, Dict) :-
-    read_string(Stream, "\u0003", "", _Sep, JSON),
+    read_string(Stream, "", "", _Sep, JSON),
     atom_json_dict(JSON, Dict, []).
 
 is_prompt(Dict) :-

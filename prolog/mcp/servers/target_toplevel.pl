@@ -32,10 +32,11 @@
 
 :- module(mcp_server_target_toplevel, []).
 :- use_module(library(mcp/server)).
+:- use_module(library(mcp/stdio), [mcp_log/2]).
 :- use_module(library(mcp/target_toplevel/parser), [drain_until_prompt/3]).
 :- use_module(library(process),
               [process_create/3, process_wait/2, process_kill/2]).
-:- use_module(library(lists), [append/3, member/2]).
+:- use_module(library(lists), [append/3, last/2, member/2]).
 :- use_module(library(apply), [exclude/3, maplist/3]).
 :- use_module(library(filesex), [directory_file_path/3]).
 
@@ -474,13 +475,86 @@ target_name(Args, Name) :-
 %   ("~w .~n" for Prolog goals, "~w~n" for raw user input, etc.).
 
 target_run(Name, Format, Args, Timeout, Text) :-
-    (   target_proc(Name, _, In, Out, Err)
-    ->  format(In, Format, Args),
-        flush_output(In),
-        drain_until_prompt(Out, Timeout, Events),
-        drain_stderr_nonblock(Err, ErrText),
-        render_events_with_stderr(Events, ErrText, Text)
+    (   target_proc(Name, PID, In, Out, Err)
+    ->  child_status(PID, Alive),
+        (   Alive == alive
+        ->  format(string(Payload), Format, Args),
+            mcp_log(target_send, target(Name, Payload)),
+            format(In, '~s', [Payload]),
+            flush_output(In),
+            drain_until_prompt(Out, Timeout, Events0),
+            (   ends_with_timeout(Events0)
+            ->  mcp_log(target_timeout, target(Name, Timeout)),
+                interrupt_and_recover(PID, In, Out, Recovery),
+                append(Events0, Recovery, Events)
+            ;   Events = Events0
+            ),
+            drain_stderr_nonblock(Err, ErrText),
+            render_events_with_stderr(Events, ErrText, Text),
+            mcp_log(target_recv, target(Name, Text))
+        ;   reap_dead_target(Name),
+            format(string(Text),
+                   "Target ~w has died: ~w. Restart with target_start.",
+                   [Name, Alive]),
+            mcp_log(target_dead, target(Name, Alive))
+        )
     ;   format(string(Text), "No running target named ~w", [Name])
+    ).
+
+%!  child_status(+PID, -Status) is det.
+%
+%   Non-blocking probe of the child. Status is `alive` when the child
+%   is still running, or a term describing how it terminated
+%   (`exit(Code)`, `killed(Signal)`). Any error while probing is
+%   treated as `alive` — we then hit the normal I/O path, which will
+%   raise a proper exception through the dispatch catch if the pipes
+%   are actually broken.
+
+child_status(PID, Status) :-
+    catch(process_wait(PID, Raw, [timeout(0)]),
+          error(_, _),
+          Raw = alive),
+    (   Raw == timeout
+    ->  Status = alive
+    ;   Status = Raw
+    ).
+
+%!  ends_with_timeout(+Events) is semidet.
+
+ends_with_timeout(Events) :-
+    last(Events, timeout).
+
+%!  interrupt_and_recover(+PID, +In, +Out, -RecoveryEvents) is det.
+%
+%   The drain_until_prompt/3 that produced the [timeout] event left the
+%   child in the middle of executing the goal. Send SIGINT so SWI's
+%   C-level handler enters its interactive `Action (h for help) ?`
+%   prompt, then answer the prompt with `a\n` (abort) via the child's
+%   stdin. The toplevel then unwinds the aborted goal and returns to a
+%   fresh prompt. Draining that fresh prompt inside this call requires
+%   the wait_for_input/3-based drain (parser.pl) — the SIGALRM used
+%   by call_with_time_limit/2 corrupts the read state after a timeout,
+%   causing silent failures on the next drain of the same stream.
+
+interrupt_and_recover(PID, In, Out, Recovery) :-
+    catch(process_kill(PID, int), error(_,_), true),
+    catch(( put_char(In, 'a'), nl(In), flush_output(In) ),
+          error(_,_), true),
+    (   catch(drain_until_prompt(Out, 3, R), error(_,_), fail)
+    ->  Recovery = R
+    ;   Recovery = []
+    ).
+
+%!  reap_dead_target(+Name) is det.
+%
+%   The child was found to be dead. Close streams, retract the record.
+
+reap_dead_target(Name) :-
+    (   retract(target_proc(Name, _, In, Out, Err))
+    ->  close(In,  [force(true)]),
+        close(Out, [force(true)]),
+        close(Err, [force(true)])
+    ;   true
     ).
 
 launch_target(Name, Files, Text) :-
