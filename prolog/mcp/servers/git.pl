@@ -46,7 +46,9 @@ Each tool resolves a `root` name through the same registry as the
 source server (mcp_server_source:source_root/2) and rejects roots
 that are not git work-trees.  The git CLI is invoked via
 process_create/3 with an explicit argv list; no shell, no command
-injection.  Only the read-only subcommands (log, blame, show, diff,
+injection.  User-supplied revisions follow `--end-of-options` and
+paths follow `--`, so values starting with `-` (e.g. `--output=File`)
+cannot be interpreted as git options.  Only the read-only subcommands (log, blame, show, diff,
 grep, ls-tree, rev-parse) are reachable.
 
 Tools registered:
@@ -88,7 +90,7 @@ git_log(Args, Text) :-
         with_optional_since(Args, SinceArgs),
         format(atom(MaxArg), "-n~w", [Max]),
         append([['log', MaxArg, Format, DateOpt],
-                SinceArgs, PathArgs], Args1),
+                SinceArgs, ['--'], PathArgs], Args1),
         run_git(RootPath, Args1, Output, Status),
         format_git_text(RootName, Status, Output, Text)
     ;   Text = Err
@@ -158,14 +160,16 @@ git_show(Args, Text) :-
         (   PathS = Args.get(path)
         ->  atom_string(Path, PathS),
             format(atom(Spec), "~w:~w", [Commit, Path]),
-            run_git(RootPath, ['show', Spec], Output, Status),
+            run_git(RootPath, ['show', '--end-of-options', Spec],
+                    Output, Status),
             (   Status = exit(0)
             ->  format(string(Text), "~w  ~w@~w:~n~w",
                        [RootName, Path, Commit, Output])
             ;   format(string(Text), "git show failed (~w):~n~w",
                        [Status, Output])
             )
-        ;   run_git(RootPath, ['show', Commit], Output, Status),
+        ;   run_git(RootPath, ['show', '--end-of-options', Commit],
+                    Output, Status),
             (   Status = exit(0)
             ->  format(string(Text), "~w  show ~w:~n~w",
                        [RootName, Commit, Output])
@@ -202,7 +206,7 @@ git_diff(Args, Text) :-
         get_dict_as_atom(ref2, Args, Ref2, 'HEAD'),
         format(atom(Range), "~w..~w", [Ref1, Ref2]),
         with_optional_path(Args, PathArgs),
-        append(['diff', Range, '--'], PathArgs, Args1),
+        append(['diff', '--end-of-options', Range, '--'], PathArgs, Args1),
         run_git(RootPath, Args1, Output, Status),
         (   Status = exit(0)
         ->  format(string(Text), "~w  ~w..~w:~n~w",
