@@ -23,7 +23,9 @@
 :- use_module(library(mcp/servers/source)).
 :- use_module(library(mcp/servers/git)).
 :- use_module(library(plunit)).
-:- use_module(library(filesex), [delete_directory_and_contents/1]).
+:- use_module(library(filesex),
+              [delete_directory_and_contents/1, directory_file_path/3]).
+:- use_module(library(process), [process_create/3, process_wait/2]).
 :- use_module(library(debug), [assertion/1]).
 :- use_module(library(git), [is_git_directory/1]).
 :- use_module(test_utils, [tool_call/3]).
@@ -31,7 +33,7 @@
 :- mcp_server_info(#{name:"test-git", version:"0.0"}).
 
 test_git :-
-    run_tests([git]).
+    run_tests([git, git_injection]).
 
 
 :- begin_tests(git,
@@ -140,3 +142,56 @@ register_non_git_root(Dir) :-
 cleanup_non_git_root(Dir) :-
     retractall(non_git_root_dir(_)),
     catch(delete_directory_and_contents(Dir), error(_,_), true).
+
+
+%  Argument-injection tests ---------------------------------------------
+%
+%  These run against a throw-away git repository so they do not
+%  depend on a swipl-devel checkout.
+
+:- begin_tests(git_injection,
+               [ condition(have_git),
+                 setup(make_tmp_git_repo),
+                 cleanup(remove_tmp_git_repo)
+               ]).
+
+test(git_grep_ref_is_not_an_option) :-
+    tmp_file('mcp_pwned', Marker),
+    format(string(Ref), "--open-files-in-pager=touch ~w", [Marker]),
+    tool_call("git_grep",
+              #{root:"_mcp_test_git_root", pattern:"hello", ref:Ref},
+              Text),
+    assertion(sub_string(Text, _, _, _, "Invalid ref")),
+    assertion(\+ exists_file(Marker)).
+
+:- end_tests(git_injection).
+
+:- dynamic tmp_git_root_dir/1.
+
+mcp_server_source:source_root('_mcp_test_git_root', Dir) :-
+    tmp_git_root_dir(Dir).
+
+have_git :-
+    absolute_file_name(path(git), _, [access(execute), file_errors(fail)]).
+
+make_tmp_git_repo :-
+    tmp_file('mcp_git', Dir),
+    make_directory(Dir),
+    directory_file_path(Dir, 'hello.txt', File),
+    setup_call_cleanup(open(File, write, Out),
+                       format(Out, "hello world~n", []),
+                       close(Out)),
+    git_in(Dir, [init, '-q']),
+    git_in(Dir, [add, 'hello.txt']),
+    git_in(Dir, ['-c', 'user.name=test', '-c', 'user.email=test@example.com',
+                 commit, '-q', '-m', initial]),
+    assertz(tmp_git_root_dir(Dir)).
+
+remove_tmp_git_repo :-
+    forall(retract(tmp_git_root_dir(Dir)),
+           catch(delete_directory_and_contents(Dir), error(_,_), true)).
+
+git_in(Dir, Args) :-
+    process_create(path(git), ['-C', Dir|Args],
+                   [stdout(null), stderr(null), process(PID)]),
+    process_wait(PID, exit(0)).
