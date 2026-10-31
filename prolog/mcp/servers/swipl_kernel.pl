@@ -33,8 +33,8 @@
 :- module(mcp_server_swipl_kernel, []).
 :- use_module(library(mcp/server)).
 :- use_module(library(process), [process_create/3, process_wait/2]).
-:- use_module(library(settings), [setting/4, setting/2]).
 :- use_module(library(filesex), [directory_file_path/3]).
+:- use_module(library(settings), [setting/4, setting/2]).
 :- use_module(library(lists), [member/2, append/3]).
 
 /** <module> MCP tools for the SWI-Prolog C kernel
@@ -91,10 +91,15 @@ c_grep(Args, Text) :-
     atom_string(Pattern, Args.pattern),
     setting(mcp_swipl_kernel:c_source_root, Root),
     (   SubdirS = Args.get(subdir), SubdirS \== ""
-    ->  atom_string(Subdir, SubdirS),
-        directory_file_path(Root, Subdir, SearchDir)
-    ;   SearchDir = Root
+    ->  atom_string(Subdir, SubdirS)
+    ;   Subdir = '.'
     ),
+    (   kernel_path(Subdir, SearchDir)
+    ->  c_grep(Pattern, Root, SearchDir, Args, Text)
+    ;   format(string(Text), "Unsafe subdir: ~w", [Subdir])
+    ).
+
+c_grep(Pattern, Root, SearchDir, Args, Text) :-
     Max = Args.get(max_results, 100),
     run_grep(Pattern, SearchDir, Raw),
     split_string(Raw, "\n", "", Lines0),
@@ -171,18 +176,37 @@ strip_prefix([L0|T0], Prefix, [L|T]) :-
 
 c_function_defs(Args, Text) :-
     atom_string(FileIn, Args.file),
-    resolve_kernel_file(FileIn, Path),
-    (   exists_file(Path)
-    ->  scan_function_defs(Path, Defs),
-        format_function_defs(Path, Defs, Text)
-    ;   format(string(Text), "File not found: ~w", [Path])
+    (   kernel_path(FileIn, Path)
+    ->  (   exists_file(Path)
+        ->  scan_function_defs(Path, Defs),
+            format_function_defs(Path, Defs, Text)
+        ;   format(string(Text), "File not found: ~w", [Path])
+        )
+    ;   format(string(Text), "File is outside the kernel root: ~w",
+               [FileIn])
     ).
 
-resolve_kernel_file(File, File) :-
-    is_absolute_file_name(File), !.
-resolve_kernel_file(File, Path) :-
-    setting(mcp_swipl_kernel:c_source_root, Root),
-    directory_file_path(Root, File, Path).
+%!  kernel_path(+File, -Path) is semidet.
+%
+%   Resolve File (relative to the kernel root, or absolute) to a
+%   canonical absolute Path.  Fails if Path is not the kernel root or
+%   below it, so `..` segments and absolute paths cannot be used to
+%   reach other files on the host.
+
+kernel_path(File, Path) :-
+    setting(mcp_swipl_kernel:c_source_root, Root0),
+    absolute_file_name(Root0, Root1),
+    (   atom_concat(Root, '/', Root1)
+    ->  true
+    ;   Root = Root1
+    ),
+    directory_file_path(Root, File, Path0),
+    absolute_file_name(Path0, Path),
+    (   Path == Root
+    ->  true
+    ;   atom_concat(Root, '/', Prefix),
+        sub_atom(Path, 0, _, _, Prefix)
+    ).
 
 scan_function_defs(Path, Defs) :-
     setup_call_cleanup(
