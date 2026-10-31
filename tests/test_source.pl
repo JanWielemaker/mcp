@@ -29,7 +29,8 @@
 
 test_source :-
     run_tests(
-        [ source
+        [ source,
+          source_safety
         ]).
 
 :- begin_tests(source,
@@ -104,6 +105,16 @@ test(source_search_no_matches) :-
     assertion(\+ sub_string(Text, _, _, _, "Grep failed")).
 
 :- end_tests(source).
+
+%  Path-safety tests that only need the always-present `swipl` root.
+
+:- begin_tests(source_safety).
+
+test(source_list_glob_cannot_escape_root) :-
+    tool_call("source_list", #{root:"swipl", glob:"../*"}, Text),
+    assertion(sub_string(Text, _, _, _, "Unsafe glob")).
+
+:- end_tests(source_safety).
 
 
 %  Setup helpers --------------------------------------------------------
