@@ -53,6 +53,7 @@
 :- use_module(library(debug), [debug/3]).
 :- use_module(library(filesex), [directory_file_path/3, directory_member/3]).
 :- use_module(library(prolog_code), [pi_head/2, head_name_arity/3]).
+:- use_module(library(settings), [setting/4, setting/2]).
 
 /** <module> MCP tools for introspecting SWI-Prolog
 
@@ -84,7 +85,19 @@ Resource templates:
 
   - prolog://help/{name}/{arity} -- read manual entry as a resource
   - prolog://section/{id}        -- read manual section body as a resource
+
+The tools that take a file (file_xref, file_check, file_autoload,
+pldoc_signature, module_exports) accept any readable file by default.
+Servers exposed to untrusted clients should set
+
+    :- set_setting_default(mcp_prolog_help:restrict_files, true).
+
+to limit them to files below a configured source root (see
+source_roots).
 */
+
+:- setting(mcp_prolog_help:restrict_files, boolean, false,
+           'Only allow the file tools to access files inside a source root').
 
                 /*******************************
                 *           TOOLS              *
@@ -269,6 +282,12 @@ format_props(QHead, Props) :-
     sig_meta(:, -),
     sig_summary(+, :, -).
 
+pldoc_signature(Args, Text) :-
+    FileS = Args.get(file),
+    atom_string(File, FileS),
+    \+ allowed_file(File),
+    !,
+    access_denied(File, Text).
 pldoc_signature(Args, Text) :-
     args_pi(Args, PI),
     (   FileS = Args.get(file)
@@ -535,6 +554,11 @@ pp_clauses(QHead) :-
 
 file_xref(Args, Text) :-
     atom_string(File, Args.file),
+    \+ allowed_file(File),
+    !,
+    access_denied(File, Text).
+file_xref(Args, Text) :-
+    atom_string(File, Args.file),
     xref_source(File, [silent(true)]),
     findall(Def,
             ( xref_defined(File, Def, How),
@@ -621,12 +645,54 @@ args_root(Args, RootName, RootPath, SearchDir, Err) :-
             directory_file_path(RootPath, Dir, SearchDir)
         ;   SearchDir = RootPath
         ),
-        (   exists_directory(SearchDir)
+        (   \+ inside_root(SearchDir, RootPath)
+        ->  format(string(Err),
+                   "Directory is outside root ~w: ~w", [RootName, Dir])
+        ;   exists_directory(SearchDir)
         ->  true
         ;   format(string(Err),
                    "Not a directory: ~w", [SearchDir])
         )
     ;   format(string(Err), "Unknown root: ~w", [RootName])
+    ).
+
+
+%!  allowed_file(+File) is semidet.
+%
+%   True if the file tools may access File.  Always true unless the
+%   setting mcp_prolog_help:restrict_files is `true`, in which case
+%   File must be inside one of the configured source roots.
+
+allowed_file(_File) :-
+    setting(mcp_prolog_help:restrict_files, false),
+    !.
+allowed_file(File) :-
+    source_root_path(_, Root),
+    inside_root(File, Root),
+    !.
+
+access_denied(File, Text) :-
+    format(string(Text),
+           "Access denied: ~w is not inside a configured source root",
+           [File]).
+
+%!  inside_root(+Path, +Root) is semidet.
+%
+%   True if the canonical form of Path is Root or a path below it.
+%   absolute_file_name/2 removes `.` and `..` segments, so these
+%   cannot be used to escape Root.
+
+inside_root(Path, Root0) :-
+    absolute_file_name(Root0, Root1),
+    (   atom_concat(Root, '/', Root1)
+    ->  true
+    ;   Root = Root1
+    ),
+    absolute_file_name(Path, Abs),
+    (   Abs == Root
+    ->  true
+    ;   atom_concat(Root, '/', Prefix),
+        sub_atom(Abs, 0, _, _, Prefix)
     ).
 
 
@@ -717,6 +783,11 @@ walk_prolog_files(Dir, Files) :-
           required: [file]
         }).
 
+file_check(Args, Text) :-
+    atom_string(File, Args.file),
+    \+ allowed_file(File),
+    !,
+    access_denied(File, Text).
 file_check(Args, Text) :-
     atom_string(File, Args.file),
     (   exists_file(File)
@@ -815,6 +886,17 @@ format_check(File, Messages, Undefs, NDefs) :-
           required: [module]
         }).
 
+module_exports(Args, Text) :-
+    catch(parse_module_spec(Args.module, FileSpec), error(_,_), fail),
+    catch(absolute_file_name(FileSpec, File,
+                             [ file_type(prolog),
+                               access(read),
+                               file_errors(fail)
+                             ]),
+          error(_,_), fail),
+    \+ allowed_file(File),
+    !,
+    access_denied(File, Text).
 module_exports(Args, Text) :-
     Pat = Args.get(pattern, ""),
     catch(parse_module_spec(Args.module, FileSpec),
@@ -943,6 +1025,11 @@ format_module_exports(Module, File, NShown, NTotal, Pat, Lines) :-
           required: [file]
         }).
 
+file_autoload(Args, Text) :-
+    atom_string(File, Args.file),
+    \+ allowed_file(File),
+    !,
+    access_denied(File, Text).
 file_autoload(Args, Text) :-
     atom_string(File, Args.file),
     Missing = Args.get(missing, true),

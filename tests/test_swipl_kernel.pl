@@ -61,6 +61,16 @@ test(c_function_defs_missing_file) :-
     tool_call("c_function_defs", #{file:"no_such_file.c"}, Text),
     assertion(sub_string(Text, _, _, _, "not found")).
 
+test(c_function_defs_outside_root,
+     [ setup(tmp_file_stream(text, Outside, S0)),
+       cleanup(delete_file(Outside))
+     ]) :-
+    format(S0, "int outside_secret(void)~n{ return 42;~n}~n", []),
+    close(S0),
+    tool_call("c_function_defs", #{file:Outside}, Text),
+    assertion(sub_string(Text, _, _, _, "outside the kernel root")),
+    assertion(\+ sub_string(Text, _, _, _, "outside_secret")).
+
 :- end_tests(swipl_kernel).
 
 
