@@ -1,11 +1,11 @@
 /*  Smoke tests for the tools registered by library(mcp/servers/source).
 
-    These tests need a real source tree to read from.  The root is
-    taken from the Prolog flag `mcp_test_swipl_devel_root`, which
-    defaults to `~/src/swipl-devel`.  Override on the command line
-    with
+    These tests need a real source tree to read from.  They use the
+    `swipl-source` root, discovered from the Prolog flag
+    `cmake_source_directory` (set when SWI-Prolog was built from a
+    source tree).  For other installs, set it on the command line:
 
-        swipl -Dmcp_test_swipl_devel_root=/path/to/swipl-devel \
+        swipl -Dcmake_source_directory=/path/to/swipl-devel \
               -g 'test_source,halt' tests/test_source.pl
 
     The test unit is skipped if the root does not exist on disk, so
