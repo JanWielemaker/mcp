@@ -151,6 +151,10 @@ test(target_stderr_surfaces,
 %  case confirms read_string/5 + atom_json_dict/3 keep non-ASCII
 %  intact (the json layer escapes to \u so the parser sees ASCII --
 %  this test pins the round-trip property regardless).
+%
+%  The text is a quoted atom, not a "string": the child is a plain
+%  swipl that loads the user's init file, which may change the
+%  double_quotes flag (e.g. to chars) and break the comparison.
 
 test(target_event_roundtrip_ascii,
      [ cleanup(stop_target("event_ascii"))
@@ -160,7 +164,7 @@ test(target_event_roundtrip_ascii,
     tool_call("target_send",
               #{ target:Name,
                  goal:"mcp_target:mcp_emit(#{k:message, level:info, \c
-                                            kind:test, text:\"abc_XYZ_123\"})"
+                                            kind:test, text:'abc_XYZ_123'})"
                },
               Out),
     assertion(sub_string(Out, _, _, _, "[info] abc_XYZ_123")).
@@ -173,7 +177,7 @@ test(target_event_roundtrip_unicode,
     tool_call("target_send",
               #{ target:Name,
                  goal:"mcp_target:mcp_emit(#{k:message, level:info, \c
-                                            kind:test, text:\"héllo_wörld\"})"
+                                            kind:test, text:'héllo_wörld'})"
                },
               Out),
     assertion(sub_string(Out, _, _, _, "héllo_wörld")).
