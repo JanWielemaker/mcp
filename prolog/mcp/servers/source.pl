@@ -161,7 +161,9 @@ source_list(Args, Text) :-
     get_dict_as_atom(dir,  Args, Dir, '.'),
     get_dict_as_atom(glob, Args, Glob, '*'),
     Max = Args.get(max_results, 200),
-    (   resolve_root_path(RootName, Dir, AbsDir, _RelDir)
+    (   \+ safe_glob(Glob)
+    ->  format(string(Text), "Unsafe glob: ~w", [Glob])
+    ;   resolve_root_path(RootName, Dir, AbsDir, _RelDir)
     ->  list_files(AbsDir, Glob, Max, Lines, NTotal),
         length(Lines, NShown),
         with_output_to(string(Text),
@@ -314,6 +316,18 @@ safe_relative(Path) :-
     \+ sub_atom(Path, 0, 1, _, '~'),
     split_string(Path, "/", "/", Parts),
     \+ memberchk("..", Parts).
+
+%!  safe_glob(+Glob) is semidet.
+%
+%   Glob is a pattern that expand_file_name/2 expands relative to the
+%   listed directory.  Besides the safe_relative/1 checks, reject any
+%   `..` (brace expansion such as `{..,x}` produces a `..` segment)
+%   and `$` (environment variable expansion).
+
+safe_glob(Glob) :-
+    safe_relative(Glob),
+    \+ sub_atom(Glob, _, _, _, '..'),
+    \+ sub_atom(Glob, _, _, _, '$').
 
 
                 /*******************************
