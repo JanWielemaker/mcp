@@ -4,12 +4,14 @@
 #
 #     make check
 #
-# Override the source root used by test_source and test_git (default
-# is ~/src/swipl-devel); the units skip themselves cleanly if the
-# resolved path is absent / not a git work-tree:
+# test_source and test_git read the `swipl-source` root, discovered
+# from the `cmake_source_directory` flag (set only for swipl built
+# from a source tree).  For other installs, point it at a checkout;
+# the units skip themselves cleanly if the resolved path is absent /
+# not a git work-tree:
 #
 #     make check \
-#         SWIPL_FLAGS=-Dmcp_test_swipl_devel_root=/path/to/swipl-devel
+#         SWIPL_FLAGS=-Dcmake_source_directory=/path/to/swipl-devel
 #
 # `make -j N check` runs the suites in parallel -- each suite is a
 # separate swipl process and they share no on-disk or in-process state.

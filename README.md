@@ -115,9 +115,11 @@ clients that prefer resources over tools can fetch help that way.
 Read source from named roots.  Every tool takes a `root` name (the
 `source_roots` tool lists what is configured); the relative path is
 joined with the root and verified to stay inside it (no `..`
-escapes).  Roots are added either by the
-`mcp_source:swipl_devel_root` setting (the built-in `"swipl-devel"`
-root) or by multifile `mcp_server_source:source_root/2` clauses.
+escapes).  Two roots are built in: `swipl` (the SWI-Prolog home
+directory) and `swipl-source` (the source tree, discovered from the
+`cmake_source_directory` flag or the build's `CMakeCache.txt`).  More
+roots are added by multifile `mcp_server_source:source_root/2`
+clauses.
 
 | Tool             | What it returns                                                       |
 | ---------------- | --------------------------------------------------------------------- |
@@ -214,14 +216,17 @@ The matrix is parallel-safe (`make -j N check`); each suite runs in
 its own `swipl` process.
 
 A few suites need a real source tree to query (`test_source`,
-`test_git`).  The root path is taken from the Prolog flag
-`mcp_test_swipl_devel_root`, which defaults to `~/src/swipl-devel`.
-Override on the command line with:
+`test_git`).  They use the built-in `swipl-source` root, which is
+discovered from the Prolog flag `cmake_source_directory` (or, failing
+that, from `CMakeCache.txt` in `cmake_binary_directory`).  Both are
+set only when SWI-Prolog was built from a source tree; for a
+packaged install (e.g. Homebrew), clone `swipl-devel` and point the
+flag at it:
 
-    make check SWIPL_FLAGS=-Dmcp_test_swipl_devel_root=/path/to/swipl-devel
+    make check SWIPL_FLAGS=-Dcmake_source_directory=/path/to/swipl-devel
 
 Suites whose root is absent (or not a git work-tree, for
-`test_git`) skip themselves cleanly.
+`test_git`) skip themselves cleanly, reporting "No tests to run".
 
 ## License
 
