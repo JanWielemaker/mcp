@@ -221,34 +221,28 @@ handle_sse(Request) :-
     ),
     !,
     sse_open([retry(5)]),
-    %  Send an opening comment so the client sees data flowing
-    %  even if no notification fires for a while.
-    catch(sse_comment("mcp/sse open"), error(_,_), true),
-    sse_loop(Q, SessionId).
+    %  The loop only ends by an exception: an I/O error when the
+    %  client has gone, or an existence error on Q if another stream
+    %  on the same session already destroyed it.
+    catch(( sse_comment("mcp/sse open"),
+            sse_loop(Q)
+          ), error(_,_), true),
+    end_session(Q, SessionId).
 handle_sse(_Request).
 
-sse_loop(Q, SessionId) :-
-    %  15 s heartbeat keeps idle reverse proxies from killing the
-    %  stream.  thread_get_message/3 with timeout/1 *fails* on
-    %  expiry, which is the heartbeat trigger.
+%  15 s heartbeat keeps idle reverse proxies from killing the stream
+%  and detects clients that went away.  thread_get_message/3 with
+%  timeout/1 *fails* on expiry, which is the heartbeat trigger.
+sse_loop(Q) :-
+    repeat,
     (   thread_get_message(Q, Event, [timeout(15)])
-    ->  send_event(Event, Q, SessionId)
-    ;   send_event(keep_alive, Q, SessionId)
-    ).
+    ->  sse_send(Event)
+    ;   sse_comment("keep-alive")
+    ),
+    fail.
 
-send_event(keep_alive, Q, SessionId) :- !,
-    (   catch(sse_comment("keep-alive"), error(_,_), fail)
-    ->  sse_loop(Q, SessionId)
-    ;   end_session(Q, SessionId)
-    ).
-send_event(Event, Q, SessionId) :-
-    (   catch(sse_send(Event), error(_,_), fail)
-    ->  sse_loop(Q, SessionId)
-    ;   end_session(Q, SessionId)
-    ).
-
-%  Stream closed by the client -- retract the session record so the
-%  notify hook stops trying to enqueue to a dead queue.
+%  Stream ended -- retract the session record so the notify hook
+%  stops trying to enqueue to a dead queue.
 end_session(Q, SessionId) :-
     retractall(mcp_session(SessionId, Q)),
     catch(message_queue_destroy(Q), error(_,_), true).
