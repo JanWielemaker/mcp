@@ -954,12 +954,12 @@ file_autoload(Args, Text) :-
     ),
     catch(file_autoload_directives(File, Directives, Options0),
           Error,
-          ( message_to_string(Error, EMsg),
-            format(string(Text), "file_autoload failed: ~w", [EMsg]),
-            fail
-          )),
+          true),
     !,
-    (   Directives == []
+    (   nonvar(Error)
+    ->  message_to_string(Error, EMsg),
+        format(string(Text), "file_autoload failed: ~w", [EMsg])
+    ;   Directives == []
     ->  Text = "All called predicates are already imported.  \c
                 Nothing to add."
     ;   with_output_to(string(Text),
