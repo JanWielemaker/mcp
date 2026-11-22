@@ -1,5 +1,5 @@
 name(mcp).
-version('0.1.2').
+version('0.1.3').
 title('Model Context Protocol (MCP) server framework').
 keywords([mcp, llm, json_rpc, ai, tools]).
 author( 'Jan Wielemaker', 'jan@swi-prolog.org' ).
