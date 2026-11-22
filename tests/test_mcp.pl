@@ -82,13 +82,10 @@ test(tools_call_bad_args) :-
     dispatch(#{ jsonrpc:"2.0", id:5, method:"tools/call",
                 params: #{name:"add", arguments: #{a:"oops", b:1}} },
              Reply),
-    %  Either a JSON-RPC error reply or a tool reply with isError:true.
-    (   _ = Reply.get(error)
-    ->  true
-    ;   true == Reply.result.get(isError)
-    ->  true
-    ;   fail
-    ).
+    Error = Reply.error,
+    assertion(Error.code == -32602),
+    assertion(Error.message == "Invalid params"),
+    assertion(string(Error.data)).
 
 test(method_not_found) :-
     dispatch(#{jsonrpc:"2.0", id:6, method:"nope/list"},
@@ -100,9 +97,9 @@ test(unknown_tool) :-
     dispatch(#{ jsonrpc:"2.0", id:7, method:"tools/call",
                 params: #{name:"missing", arguments: #{}} },
              Reply),
-    (   _ = Reply.get(error)
-    ->  true
-    ;   true == Reply.result.get(isError)
-    ).
+    Error = Reply.error,
+    assertion(Error.code == -32602),
+    assertion(Error.message == "Unknown tool"),
+    assertion(Error.data.name == "missing").
 
 :- end_tests(mcp).

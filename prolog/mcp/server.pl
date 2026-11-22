@@ -317,6 +317,26 @@ mcp_handle_(Request, Stream, Options) :-
                         error: #{code: -32600, message:"Invalid Request"}},
               Options).
 
+%!  mcp_protocol_error(+Error, +Request, +Stream, +Options)
+%
+%   Reply to Request with a JSON-RPC error.  The exception
+%   mcp_error(Code, Message, Data), thrown by the method handlers
+%   (e.g., for an unknown tool or invalid arguments) is replied with
+%   its own code, message and data.  Anything else is an internal
+%   error.
+
+mcp_protocol_error(mcp_error(Code, Message, Data), Request, Stream,
+                   Options) :-
+    !,
+    (   Id = Request.get(id)
+    ->  rpc_reply(Stream,
+                  #{ jsonrpc:"2.0", id:Id,
+                     error: #{ code: Code,
+                               message: Message,
+                               data: Data } },
+                  Options)
+    ;   true
+    ).
 mcp_protocol_error(Error, Request, Stream, Options) :-
     message_to_string(Error, Msg),
     (   Id = Request.get(id)

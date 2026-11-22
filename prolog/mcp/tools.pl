@@ -85,7 +85,7 @@ validate_args(CompiledSchema, Args) :-
     catch(json_check(CompiledSchema, Args, []),
           Error,
           (   message_to_string(Error, Msg),
-              throw(mcp_error(-32602, "Invalid params", #{data:Msg}))
+              throw(mcp_error(-32602, "Invalid params", Msg))
           )).
 
 run_tool(Module, Name, Args, Result) :-
