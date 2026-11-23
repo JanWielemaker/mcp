@@ -235,8 +235,18 @@ git_diff(Args, Text) :-
         }).
 
 git_grep(Args, Text) :-
-    git_root(Args, RootPath, RootName, Err),
+    git_root(Args, RootPath, RootName, Err0),
     !,
+    %  git grep has no --end-of-options support after -e, so a ref
+    %  starting with `-` would be parsed as an option.  Options such
+    %  as --open-files-in-pager=<cmd> run arbitrary commands.
+    (   nonvar(Err0)
+    ->  Err = Err0
+    ;   RefS0 = Args.get(ref),
+        sub_string(RefS0, 0, 1, _, "-")
+    ->  format(string(Err), "Invalid ref: ~w", [RefS0])
+    ;   true
+    ),
     (   var(Err)
     ->  atom_string(Pattern, Args.pattern),
         Max = Args.get(max_results, 100),
